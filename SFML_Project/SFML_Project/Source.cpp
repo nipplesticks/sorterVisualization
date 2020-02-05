@@ -16,6 +16,8 @@ double g_sleep = 0.0;
 double g_sortTime = 0.0;
 sf::Font g_font;
 
+bool g_abort = false;
+
 enum Algorithm
 {
     BubbleSort = 0,
@@ -65,6 +67,7 @@ void Init(std::vector<Value> & val);
 int main()
 {
     srand(time(0));
+
     sf::RenderWindow wnd(sf::VideoMode(WIN_X, WIN_Y), "Sorter");
     wnd.setPosition(sf::Vector2i(0, 0));
     g_font.loadFromFile("AGENCYB.TTF");
@@ -101,14 +104,26 @@ int main()
 
     Value::SLEEP_DURATION_IN_MS_FOR_EACH_ASSIGNMENT_OPERATION = 0.01;
 
-    while (wnd.isOpen())
+    while (wnd.isOpen() || g_ongoing || g_shuffleOngoing || g_joinShuffleThread || g_joinSortingThread)
     {
+        if (g_abort)
+        {
+            g_abort = g_ongoing || g_shuffleOngoing;
+        }
+
         sf::Event e;
         while (wnd.pollEvent(e))
         {
             if (e.type == sf::Event::Closed)
+            {
                 wnd.close();
+                g_abort = true;
+            }
         }
+
+        if (!wnd.isOpen())
+            g_abort = true;
+
         bool restartPressed =
             sf::Keyboard::isKeyPressed(sf::Keyboard::Space);
         bool lPressed =
@@ -123,6 +138,17 @@ int main()
             sf::Keyboard::isKeyPressed(sf::Keyboard::Subtract);
         bool addPressed =
             sf::Keyboard::isKeyPressed(sf::Keyboard::Add);
+        
+        bool abortPressed = 
+            sf::Keyboard::isKeyPressed(sf::Keyboard::Q);
+
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Escape))
+        {
+            g_abort = true;
+            wnd.close();
+        }
+            
+        g_abort = g_abort || abortPressed;
         
         if (!lPressedLastFrame && lPressed)
         {
@@ -392,6 +418,14 @@ void Shuffle(std::vector<Value>* val, int it)
 
     for (int i = 0; i < abs(it); i++)
     {
+        if (g_abort)
+        {
+            g_startSorting = true;
+            g_shuffleOngoing = false;
+            g_joinShuffleThread = true;
+            return;
+        }
+
         int i1 = rand() % val->size();
         int i2 = rand() % val->size();
 
@@ -399,8 +433,6 @@ void Shuffle(std::vector<Value>* val, int it)
         val->at(i1) = val->at(i2);
         val->at(i2) = t;
     }
-
-
     g_startSorting = true;
     g_shuffleOngoing = false;
     g_joinShuffleThread = true;
@@ -485,6 +517,9 @@ double _bubbleSort(std::vector<Value>* val)
         //val->at(i).SetColor(sf::Color::Red);
         for (int j = i + 1; j < size; j++)
         {
+            if (g_abort)
+                return -1;
+
             //val->at(j).SetColor(sf::Color::Red);
             if (val->at(j) < val->at(i))
             {
@@ -517,6 +552,8 @@ double _insertionSort(std::vector<Value>* val)
         int j = i - 1;
         while ((j >= 0) && (t < val->at(j)))
         {
+            if (g_abort)
+                return -1;
             val->at(j + 1) = val->at(j);
             j = j - 1;
         }
@@ -544,6 +581,8 @@ double _selectionSort(std::vector<Value>* val)
 
         for (int j = i + 1; j < size; j++)
         {
+            if (g_abort)
+                return -1;
             if (val->at(j) < val->at(minIdx))
             {
                 val->at(minIdx) = val->at(minIdx); // Just to sleep
@@ -577,6 +616,8 @@ double _randomSort(std::vector<Value>* val)
     bool swap = true;
     while (!isSorted)
     {
+        if (g_abort)
+            return -1;
         if (swap)
         {
             isSorted = true;
@@ -628,6 +669,8 @@ double _gnomeSort(std::vector<Value>* val)
 
     while (index < n)
     {
+        if (g_abort)
+            return -1;
         if (index == 0)
             index++;
         if (val->at(index) >= val->at(index - 1))
@@ -718,8 +761,12 @@ double _radixSort(std::vector<Value>* val)
     int m = __getMax(val).GetVal();
     size_t n = val->size();
 
-    for (int exp = 1; m/exp > 0; exp *= 10)
+    for (int exp = 1; m / exp > 0; exp *= 10)
+    {
+        if (g_abort)
+            return -1;
         __countSort(val, n, exp);
+    }
 
     time = t.Stop(Timer::MILLISECONDS) - Value::TOTAL_SLEEP_DURATION_FOR_ALL_VALUES;
     Value::TOTAL_SLEEP_DURATION_FOR_ALL_VALUES = 0.0;
@@ -753,6 +800,8 @@ void __quickSort(std::vector<Value>* val, int low, int high)
 {
     if (low < high)
     {
+        if (g_abort)
+            return;
         int pi = __partition(val, low, high);
         __quickSort(val, low, pi - 1);
         __quickSort(val, pi + 1, high);
@@ -770,11 +819,16 @@ double _quickSort(std::vector<Value>* val)
     time = t.Stop(Timer::MILLISECONDS) - Value::TOTAL_SLEEP_DURATION_FOR_ALL_VALUES;
     Value::TOTAL_SLEEP_DURATION_FOR_ALL_VALUES = 0.0;
 
+    if (g_abort)
+        return -1;
     return time;
 }
 
 void __heapify(std::vector<Value>* val, int size, int i)
 {
+    if (g_abort)
+        return;
+
     int largest = i;
     int left = 2 * i + 1;
     int right = 2 * i + 2;
@@ -798,10 +852,16 @@ void __heapify(std::vector<Value>* val, int size, int i)
 void __heapSort(std::vector<Value>* val, int size)
 {
     for (int i = size / 2 - 1; i >= 0; i--)
+    {
+        if (g_abort)
+            return;
         __heapify(val, size, i);
+    }
 
     for (int i = size - 1; i >= 0; i--)
     {
+        if (g_abort)
+            return;
         Value t = val->at(0);
         val->at(0) = val->at(i);
         val->at(i) = t;
@@ -820,6 +880,8 @@ double _heapSort(std::vector<Value>* val)
 
     time = t.Stop(Timer::MILLISECONDS) - Value::TOTAL_SLEEP_DURATION_FOR_ALL_VALUES;
     Value::TOTAL_SLEEP_DURATION_FOR_ALL_VALUES = 0.0;
+    if (g_abort)
+        return -1;
 
     return time;
 }
@@ -843,6 +905,8 @@ void __merge(std::vector<Value>* val, int l, int m, int r)
     k = l; 
     while (i < n1 && j < n2)
     {
+        if (g_abort)
+            return;
         if (L[i] <= R[j])
         {
             val->at(k) = L[i];
@@ -875,6 +939,8 @@ void __mergeSort(std::vector<Value>* val, int l, int r)
 {
     if (l < r)
     {
+        if (g_abort)
+            return;
         int m = l + (r - l) / 2;
         __mergeSort(val, l, m);
         __mergeSort(val, m+1, r);
@@ -892,6 +958,8 @@ double _mergeSort(std::vector<Value>* val)
 
     time = t.Stop(Timer::MILLISECONDS) - Value::TOTAL_SLEEP_DURATION_FOR_ALL_VALUES;
     Value::TOTAL_SLEEP_DURATION_FOR_ALL_VALUES = 0.0;
+    if (g_abort)
+        return -1;
 
     return time;
 }
@@ -913,6 +981,8 @@ void __flip(std::vector<Value>* val, int i)
     int start = 0;
     while (start < i)
     {
+        if (g_abort)
+            return;
         Value t = val->at(start);
         val->at(start) = val->at(i);
         val->at(i) = t;
@@ -931,6 +1001,8 @@ double _pancakeSort(std::vector<Value>* val)
 
     for (int curr_size = n; curr_size > 1; --curr_size)
     {
+        if (g_abort)
+            return -1;
         int mi = __findMax(val, curr_size);
 
         if (mi != curr_size - 1)
@@ -957,6 +1029,8 @@ double _cycleSort(std::vector<Value>* val)
 
     for (int cycle_start = 0; cycle_start <= n - 2; cycle_start++)
     {
+        if (g_abort)
+            return -1;
         Value item = val->at(cycle_start);
 
         int pos = cycle_start;
@@ -970,7 +1044,8 @@ double _cycleSort(std::vector<Value>* val)
         while (item == val->at(pos))
             pos += 1;
 
-        if (pos != cycle_start) {
+        if (pos != cycle_start)
+        {
             Value t = item;
             item = val->at(pos);
             val->at(pos) = t;
@@ -978,7 +1053,10 @@ double _cycleSort(std::vector<Value>* val)
             writes++;
         }
 
-        while (pos != cycle_start) {
+        while (pos != cycle_start)
+        {
+            if (g_abort)
+                return -1;
             pos = cycle_start;
 
             for (int i = cycle_start + 1; i < n; i++)
@@ -1013,6 +1091,8 @@ double _shellSort(std::vector<Value>* val)
     {
         for (int i = gap; i < n; i++)
         {
+            if (g_abort)
+                return -1;
             Value t = val->at(i);
 
             int j;
@@ -1030,6 +1110,8 @@ double _shellSort(std::vector<Value>* val)
 
 void __stoogesort(std::vector<Value>* vec, int l, int h)
 {
+    if (g_abort)
+        return;
     if (l >= h)
         return;
 
@@ -1060,6 +1142,8 @@ double _stoogeSort(std::vector<Value>* val)
 
     time = t.Stop(Timer::MILLISECONDS) - Value::TOTAL_SLEEP_DURATION_FOR_ALL_VALUES;
     Value::TOTAL_SLEEP_DURATION_FOR_ALL_VALUES = 0.0;
+    if (g_abort)
+        return -1;
     return time;
 }
 
@@ -1085,10 +1169,14 @@ double _combSort(std::vector<Value>* val)
 
     while (gap != 1 || swapped == true)
     {
+        if (g_abort)
+            return -1;
         gap = __getNextGap(gap);
         swapped = false;
         for (int i = 0; i < n - gap; i++)
         {
+            if (g_abort)
+                return -1;
             if (val->at(i) > val->at(i + gap))
             {
                 Value t = val->at(i);
@@ -1117,10 +1205,14 @@ double _cocktailSort(std::vector<Value>* val)
 
     while (swapped)
     {
+        if (g_abort)
+            return -1;
         swapped = false;
 
         for (int i = start; i < end; ++i)
         {
+            if (g_abort)
+                return -1;
             if (val->at(i) > val->at(i + 1))
             {
                 Value t = val->at(i);
@@ -1137,6 +1229,8 @@ double _cocktailSort(std::vector<Value>* val)
 
         for (int i = end - 1; i >= start; --i)
         {
+            if (g_abort)
+                return -1;
             if (val->at(i) > val->at(i + 1))
             {
                 Value t = val->at(i);
@@ -1167,6 +1261,8 @@ double _pigeonholeSort(std::vector<Value>* val)
 
     for (int i = 1; i < n; i++)
     {
+        if (g_abort)
+            return -1;
         if (val->at(i) < mi)
             mi = val->at(i);
         if (val->at(i) > ma)
@@ -1178,12 +1274,18 @@ double _pigeonholeSort(std::vector<Value>* val)
     std::vector<std::vector<Value>> holes(range);
 
     for (int i = 0; i < n; i++)
+    {
+        if (g_abort)
+            return -1;
         holes[val->at(i).GetVal() - mi.GetVal()].push_back(val->at(i));
+    }
 
     int index = 0;
 
     for (int i = 0; i < range; i++)
     {
+        if (g_abort)
+            return -1;
         std::vector<Value>::iterator it;
         for (it = holes[i].begin(); it != holes[i].end(); ++it)
             val->at(index++) = *it;
@@ -1237,6 +1339,8 @@ void Init(std::vector<Value> & val)
 
     for (int i = 0; i < val.size(); i++)
     {
+        if (g_abort)
+            return;
         double v = (double)(i) / ((double)val.size() - 1.0);
 
         double f = 0;
